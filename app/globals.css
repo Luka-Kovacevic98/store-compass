@@ -1,0 +1,74 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme inline {
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+
+  --color-background: oklch(0.21 0.04 265);
+  --color-foreground: oklch(0.97 0.01 255);
+
+  --color-card: oklch(1 0 0 / 0.08);
+  --color-card-foreground: oklch(0.97 0.01 255);
+
+  --color-muted: oklch(1 0 0 / 0.06);
+  --color-muted-foreground: oklch(0.78 0.03 260);
+
+  --color-primary: oklch(0.72 0.15 235);
+  --color-primary-foreground: oklch(0.16 0.03 265);
+
+  --color-accent: oklch(0.82 0.16 195);
+  --color-accent-foreground: oklch(0.16 0.03 265);
+
+  --color-border: oklch(1 0 0 / 0.18);
+  --color-ring: oklch(0.72 0.15 235);
+
+  --radius: 1rem;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+}
+
+/* Glass shimmer skeleton */
+@keyframes glass-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.glass-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    oklch(1 0 0 / 0.04) 30%,
+    oklch(1 0 0 / 0.14) 50%,
+    oklch(1 0 0 / 0.04) 70%
+  );
+  background-size: 200% 100%;
+  animation: glass-shimmer 1.5s ease-in-out infinite;
+}
+
+/* Hotspot pulsing glow */
+@keyframes hotspot-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 oklch(0.82 0.16 195 / 0.55), 0 0 22px 4px oklch(0.82 0.16 195 / 0.45);
+    border-color: oklch(0.86 0.16 195 / 0.95);
+  }
+  50% {
+    box-shadow: 0 0 0 10px oklch(0.82 0.16 195 / 0), 0 0 30px 8px oklch(0.82 0.16 195 / 0.65);
+    border-color: oklch(0.92 0.12 195 / 1);
+  }
+}
+
+.hotspot-pulse {
+  animation: hotspot-pulse 1.8s ease-in-out infinite;
+}

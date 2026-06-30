@@ -1,0 +1,200 @@
+// Deterministic top-down store floor plan rendered as an SVG.
+// Draws the store footprint, entrance, checkout lanes, perimeter departments
+// and a row of numbered aisle gondolas. This is the overhead map on which the
+// article location marker is pinned. Crisp at any zoom, no network image needed.
+
+interface StoreFloorPlanProps {
+  seed: string
+  width: number
+  height: number
+  className?: string
+}
+
+// Tiny deterministic PRNG so each store renders a stable, unique layout.
+function makeRng(seed: string) {
+  let h = 2166136261
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return () => {
+    h += 0x6d2b79f5
+    let t = h
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+const DEPARTMENTS = ["Produce", "Bakery", "Dairy", "Frozen", "Deli", "Beverages", "Household"]
+
+function StoreFloorPlan({ seed, width, height, className }: StoreFloorPlanProps) {
+  const rng = makeRng(seed)
+
+  const wall = 30
+  const innerX = wall
+  const innerY = wall
+  const innerW = width - wall * 2
+  const innerH = height - wall * 2
+
+  // Aisle gondolas live in the central zone.
+  const aisleCount = 5 + Math.floor(rng() * 2) // 5–6 aisles
+  const zoneTop = innerY + 110
+  const zoneBottom = height - wall - 120
+  const zoneLeft = innerX + 150
+  const zoneRight = width - wall - 60
+  const zoneW = zoneRight - zoneLeft
+  const gondolaW = (zoneW / aisleCount) * 0.5
+  const aisleStep = zoneW / aisleCount
+
+  const aisles = []
+  for (let i = 0; i < aisleCount; i++) {
+    const gx = zoneLeft + i * aisleStep + (aisleStep - gondolaW) / 2
+    aisles.push(
+      <g key={`aisle-${i}`}>
+        <rect
+          x={gx}
+          y={zoneTop}
+          width={gondolaW}
+          height={zoneBottom - zoneTop}
+          rx={6}
+          fill="#1e293b"
+          stroke="#475569"
+          strokeOpacity={0.5}
+        />
+        <text
+          x={gx + gondolaW / 2}
+          y={zoneTop - 14}
+          textAnchor="middle"
+          fontSize={20}
+          fontWeight={600}
+          fill="#cbd5e1"
+          fontFamily="ui-sans-serif, system-ui, sans-serif"
+        >
+          {i + 1}
+        </text>
+      </g>,
+    )
+  }
+
+  // Perimeter departments along the left wall (kept above the checkout zone).
+  const leftZoneTop = innerY + 80
+  const leftZoneBottom = height - wall - 130
+  const leftDeptCount = 3
+  const leftDeptH = (leftZoneBottom - leftZoneTop) / leftDeptCount
+  const leftDepts = []
+  for (let i = 0; i < leftDeptCount; i++) {
+    const dy = leftZoneTop + i * leftDeptH
+    leftDepts.push(
+      <g key={`ld-${i}`}>
+        <rect
+          x={innerX + 20}
+          y={dy}
+          width={90}
+          height={leftDeptH - 16}
+          rx={6}
+          fill="#0f2436"
+          stroke="#1e4a63"
+          strokeOpacity={0.6}
+        />
+        <text
+          x={innerX + 65}
+          y={dy + (leftDeptH - 16) / 2}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fontSize={14}
+          fill="#7dd3fc"
+          fontFamily="ui-sans-serif, system-ui, sans-serif"
+        >
+          {DEPARTMENTS[Math.floor(rng() * DEPARTMENTS.length)]}
+        </text>
+      </g>,
+    )
+  }
+
+  // Checkout lanes near the entrance (bottom-left).
+  const lanes = []
+  for (let i = 0; i < 4; i++) {
+    const lx = innerX + 40 + i * 70
+    lanes.push(
+      <rect
+        key={`lane-${i}`}
+        x={lx}
+        y={height - wall - 80}
+        width={20}
+        height={50}
+        rx={4}
+        fill="#334155"
+        stroke="#64748b"
+        strokeOpacity={0.5}
+      />,
+    )
+  }
+
+  const entranceX = width - wall - 220
+
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      className={className}
+      role="img"
+      aria-label="Top-down store floor plan showing aisles, departments, checkouts and the entrance"
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <rect x={0} y={0} width={width} height={height} fill="#0b1220" />
+
+      {/* Store footprint / outer wall */}
+      <rect
+        x={innerX}
+        y={innerY}
+        width={innerW}
+        height={innerH}
+        rx={16}
+        fill="#0d1729"
+        stroke="#475569"
+        strokeWidth={3}
+        strokeOpacity={0.7}
+      />
+
+      {/* Entrance gap on the bottom wall */}
+      <rect x={entranceX} y={height - wall - 6} width={150} height={12} fill="#0b1220" />
+      <text
+        x={entranceX + 75}
+        y={height - wall - 18}
+        textAnchor="middle"
+        fontSize={15}
+        fontWeight={600}
+        fill="#34d399"
+        fontFamily="ui-sans-serif, system-ui, sans-serif"
+      >
+        Entrance
+      </text>
+
+      <text
+        x={innerX + 24}
+        y={innerY + 44}
+        fontSize={26}
+        fontWeight={600}
+        fill="#e2e8f0"
+        fontFamily="ui-sans-serif, system-ui, sans-serif"
+      >
+        Store floor plan
+      </text>
+
+      {leftDepts}
+      {aisles}
+      {lanes}
+      <text
+        x={innerX + 40}
+        y={height - wall - 92}
+        fontSize={13}
+        fill="#94a3b8"
+        fontFamily="ui-sans-serif, system-ui, sans-serif"
+      >
+        Checkouts
+      </text>
+    </svg>
+  )
+}
+
+export default StoreFloorPlan
