@@ -30,6 +30,9 @@ interface PlannerArticleDraft {
 interface PlannerEntry {
   hotspot: Hotspot
   details: PlannerArticleDraft
+  linkedFixtureId?: string | null
+  fixtureOffsetXPct?: number
+  fixtureOffsetYPct?: number
 }
 
 interface StorePlannerEditorProps {
@@ -56,6 +59,32 @@ function clamp(value: number, min: number, max: number) {
 
 function uid(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}`
+}
+
+function isLinkableFixtureType(type: FixtureType) {
+  return type === "shelf" || type === "fridge"
+}
+
+function findLinkedFixture(hotspot: Hotspot, fixtures: Fixture[]) {
+  const cx = hotspot.xPct + hotspot.wPct / 2
+  const cy = hotspot.yPct + hotspot.hPct / 2
+  return (
+    fixtures.find(
+      (fixture) =>
+        isLinkableFixtureType(fixture.type) &&
+        cx >= fixture.xPct &&
+        cx <= fixture.xPct + fixture.wPct &&
+        cy >= fixture.yPct &&
+        cy <= fixture.yPct + fixture.hPct,
+    ) ?? null
+  )
+}
+
+function getFixtureOffsets(hotspot: Hotspot, fixture: Fixture) {
+  return {
+    fixtureOffsetXPct: hotspot.xPct - fixture.xPct,
+    fixtureOffsetYPct: hotspot.yPct - fixture.yPct,
+  }
 }
 
 function fixtureColorClasses(type: FixtureType) {
@@ -148,12 +177,14 @@ function StorePlannerEditor({
   /** highlights a saved entry on the canvas */
   const [selectedEntryIndex, setSelectedEntryIndex] = useState<number | null>(null)
   const [showWalls, setShowWalls] = useState(true)
+  const [pendingLinkedFixtureId, setPendingLinkedFixtureId] = useState<string | null>(null)
 
   const [articleDraft, setArticleDraft] = useState<PlannerArticleDraft>(BLANK_DRAFT)
 
   const actionRef = useRef<{
-    kind: "drag-fixture" | "resize-fixture" | "drag-slot" | "resize-slot"
+    kind: "drag-fixture" | "resize-fixture" | "drag-slot" | "resize-slot" | "drag-entry"
     targetId?: string
+    entryIndex?: number
     startX: number
     startY: number
     startRect: { xPct: number; yPct: number; wPct: number; hPct: number }
@@ -169,11 +200,17 @@ function StorePlannerEditor({
 
     if (justOpened) {
       if (initialPlanogram) {
-        setFixtures(initialPlanogram.fixtures ?? [])
+        const initialFixtures = initialPlanogram.fixtures ?? []
+        setFixtures(initialFixtures)
         setShowWalls(initialPlanogram.showWalls ?? true)
         setEntries(
           initialPlanogram.items.map((item) => {
             const article = allArticles?.find((a) => a.articleId === item.articleId)
+            const linkedFixture =
+              initialFixtures.find((fixture) => fixture.id === item.connectedFixtureId) ??
+              findLinkedFixture(item.hotspot, initialFixtures)
+            const offsets = linkedFixture ? getFixtureOffsets(item.hotspot, linkedFixture) : null
+
             return {
               hotspot: item.hotspot,
               details: {
@@ -187,6 +224,9 @@ function StorePlannerEditor({
                 unitsPerRow: item.unitsPerRow,
                 instructions: item.instructions,
               },
+              linkedFixtureId: linkedFixture?.id ?? null,
+              fixtureOffsetXPct: item.fixtureOffsetXPct ?? offsets?.fixtureOffsetXPct,
+              fixtureOffsetYPct: item.fixtureOffsetYPct ?? offsets?.fixtureOffsetYPct,
             }
           }),
         )
@@ -208,6 +248,7 @@ function StorePlannerEditor({
     setDetailsOpen(false)
     setEditingEntryIndex(null)
     setSelectedEntryIndex(null)
+    setPendingLinkedFixtureId(null)
     setShowWalls(true)
     setSaving(false)
     setArticleDraft(BLANK_DRAFT)
@@ -237,17 +278,56 @@ function StorePlannerEditor({
     const dyPct = ((event.clientY - action.startY) / rect.height) * 100
 
     if (action.kind === "drag-fixture" && action.targetId) {
+      let movedDx = 0
+      let movedDy = 0
       setFixtures((prev) =>
         prev.map((f) =>
           f.id !== action.targetId
             ? f
             : {
                 ...f,
-                xPct: clamp(action.startRect.xPct + dxPct, 0, 100 - f.wPct),
-                yPct: clamp(action.startRect.yPct + dyPct, 0, 100 - f.hPct),
+                xPct: (() => {
+                  const next = clamp(action.startRect.xPct + dxPct, 0, 100 - f.wPct)
+                  movedDx = next - f.xPct
+                  return next
+                })(),
+                yPct: (() => {
+                  const next = clamp(action.startRect.yPct + dyPct, 0, 100 - f.hPct)
+                  movedDy = next - f.yPct
+                  return next
+                })(),
               },
         ),
       )
+
+      if (movedDx !== 0 || movedDy !== 0) {
+        setEntries((prev) =>
+          prev.map((entry) => {
+            if (entry.linkedFixtureId !== action.targetId) return entry
+            return {
+              ...entry,
+              hotspot: {
+                ...entry.hotspot,
+                xPct: clamp(entry.hotspot.xPct + movedDx, 0, 100 - entry.hotspot.wPct),
+                yPct: clamp(entry.hotspot.yPct + movedDy, 0, 100 - entry.hotspot.hPct),
+              },
+            }
+          }),
+        )
+
+        if (pendingLinkedFixtureId === action.targetId) {
+          setPendingHotspot((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  xPct: clamp(prev.xPct + movedDx, 0, 100 - prev.wPct),
+                  yPct: clamp(prev.yPct + movedDy, 0, 100 - prev.hPct),
+                }
+              : prev,
+          )
+        }
+      }
+
       return
     }
     if (action.kind === "resize-fixture" && action.targetId) {
@@ -276,6 +356,36 @@ function StorePlannerEditor({
       )
       return
     }
+    if (action.kind === "drag-entry" && action.entryIndex !== undefined) {
+      setEntries((prev) =>
+        prev.map((entry, index) => {
+          if (index !== action.entryIndex) return entry
+
+          const nextHotspot = {
+            ...entry.hotspot,
+            xPct: clamp(action.startRect.xPct + dxPct, 0, 100 - entry.hotspot.wPct),
+            yPct: clamp(action.startRect.yPct + dyPct, 0, 100 - entry.hotspot.hPct),
+          }
+
+          if (!entry.linkedFixtureId) {
+            return { ...entry, hotspot: nextHotspot }
+          }
+
+          const linkedFixture = fixtures.find((fixture) => fixture.id === entry.linkedFixtureId)
+          if (!linkedFixture) {
+            return { ...entry, hotspot: nextHotspot }
+          }
+
+          return {
+            ...entry,
+            hotspot: nextHotspot,
+            fixtureOffsetXPct: nextHotspot.xPct - linkedFixture.xPct,
+            fixtureOffsetYPct: nextHotspot.yPct - linkedFixture.yPct,
+          }
+        }),
+      )
+      return
+    }
     if (action.kind === "resize-slot") {
       setPendingHotspot((prev) =>
         prev
@@ -301,6 +411,7 @@ function StorePlannerEditor({
       wPct: Math.max(selectedFixture.wPct * 0.45, 6),
       hPct: Math.max(selectedFixture.hPct * 0.45, 6),
     })
+    setPendingLinkedFixtureId(isLinkableFixtureType(selectedFixture.type) ? selectedFixture.id : null)
     setEditingEntryIndex(null)
     setSelectedEntryIndex(null)
   }
@@ -317,6 +428,7 @@ function StorePlannerEditor({
     if (!entry) return
     setEditingEntryIndex(index)
     setPendingHotspot(entry.hotspot)
+    setPendingLinkedFixtureId(entry.linkedFixtureId ?? null)
     setArticleDraft({ ...entry.details })
     setSelectedEntryIndex(index)
     setDetailsOpen(true)
@@ -342,18 +454,46 @@ function StorePlannerEditor({
       instructions: articleDraft.instructions.trim() || "Placement configured in planner.",
     }
 
+    const hotspotForSave =
+      editingEntryIndex !== null
+        ? pendingHotspot ?? entries[editingEntryIndex]?.hotspot ?? null
+        : pendingHotspot
+    if (!hotspotForSave) return
+
+    const linkedFixture =
+      fixtures.find((fixture) => fixture.id === pendingLinkedFixtureId) ??
+      findLinkedFixture(hotspotForSave, fixtures)
+    const linkOffsets = linkedFixture ? getFixtureOffsets(hotspotForSave, linkedFixture) : null
+
     if (editingEntryIndex !== null) {
       setEntries((prev) =>
         prev.map((e, i) =>
-          i === editingEntryIndex ? { hotspot: pendingHotspot ?? e.hotspot, details } : e,
+          i === editingEntryIndex
+            ? {
+                hotspot: hotspotForSave,
+                details,
+                linkedFixtureId: linkedFixture?.id ?? null,
+                fixtureOffsetXPct: linkOffsets?.fixtureOffsetXPct,
+                fixtureOffsetYPct: linkOffsets?.fixtureOffsetYPct,
+              }
+            : e,
         ),
       )
     } else {
-      if (!pendingHotspot) return
-      setEntries((prev) => [...prev, { hotspot: pendingHotspot, details }])
+      setEntries((prev) => [
+        ...prev,
+        {
+          hotspot: hotspotForSave,
+          details,
+          linkedFixtureId: linkedFixture?.id ?? null,
+          fixtureOffsetXPct: linkOffsets?.fixtureOffsetXPct,
+          fixtureOffsetYPct: linkOffsets?.fixtureOffsetYPct,
+        },
+      ])
     }
 
     setPendingHotspot(null)
+    setPendingLinkedFixtureId(null)
     setDetailsOpen(false)
     setEditingEntryIndex(null)
     setSelectedEntryIndex(null)
@@ -366,6 +506,9 @@ function StorePlannerEditor({
     const planogramItems: PlanogramItem[] = entries.map((entry) => ({
       articleId: "",
       hotspot: entry.hotspot,
+      connectedFixtureId: entry.linkedFixtureId ?? undefined,
+      fixtureOffsetXPct: entry.fixtureOffsetXPct,
+      fixtureOffsetYPct: entry.fixtureOffsetYPct,
       shelfImageUrl: "/shelves/custom.svg",
       instructions: entry.details.instructions,
       aisle: entry.details.aisle,
@@ -475,6 +618,21 @@ function StorePlannerEditor({
                 disabled={!selectedFixture}
                 onClick={() => {
                   if (!selectedFixture) return
+                  setEntries((prev) =>
+                    prev.map((entry) =>
+                      entry.linkedFixtureId === selectedFixture.id
+                        ? {
+                            ...entry,
+                            linkedFixtureId: null,
+                            fixtureOffsetXPct: undefined,
+                            fixtureOffsetYPct: undefined,
+                          }
+                        : entry,
+                    ),
+                  )
+                  if (pendingLinkedFixtureId === selectedFixture.id) {
+                    setPendingLinkedFixtureId(null)
+                  }
                   setFixtures((prev) => prev.filter((f) => f.id !== selectedFixture.id))
                   setSelectedFixtureId(null)
                 }}
@@ -726,6 +884,18 @@ function StorePlannerEditor({
                       event.stopPropagation()
                       setSelectedEntryIndex(idx)
                       setSelectedFixtureId(null)
+                      actionRef.current = {
+                        kind: "drag-entry",
+                        entryIndex: idx,
+                        startX: event.clientX,
+                        startY: event.clientY,
+                        startRect: {
+                          xPct: entry.hotspot.xPct,
+                          yPct: entry.hotspot.yPct,
+                          wPct: entry.hotspot.wPct,
+                          hPct: entry.hotspot.hPct,
+                        },
+                      }
                     }}
                     onDoubleClick={(event) => {
                       event.stopPropagation()
@@ -835,6 +1005,7 @@ function StorePlannerEditor({
                   setDetailsOpen(false)
                   if (editingEntryIndex !== null) {
                     setPendingHotspot(null)
+                    setPendingLinkedFixtureId(null)
                     setEditingEntryIndex(null)
                     setSelectedEntryIndex(null)
                   }

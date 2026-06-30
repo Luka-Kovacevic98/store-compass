@@ -41,6 +41,9 @@ export interface Fixture {
 export interface PlanogramItem {
   articleId: string
   hotspot: Hotspot
+  connectedFixtureId?: string
+  fixtureOffsetXPct?: number
+  fixtureOffsetYPct?: number
   shelfImageUrl: string
   instructions: string
   aisle: string

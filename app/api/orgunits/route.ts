@@ -10,11 +10,15 @@ interface KeephubResponse {
 }
 
 async function fetchOrgUnitsPage(token: string, skip: number, limit: number): Promise<KeephubResponse> {
+  // Range filter for the namepath prefix ",Keephub,Stores,".
+  // This pushes filtering to Keephub and avoids returning unrelated orgunits.
   const params = new URLSearchParams({
     "$sort": "namepath",
     allFields: "false",
     "$skip": String(skip),
     "$limit": String(limit),
+    "namepath[$gte]": ",Keephub,Stores,",
+    "namepath[$lt]": ",Keephub,Storet",
   })
 
   const response = await fetch(`https://dev.api.keephub.io/orgchart?${params.toString()}`, {
