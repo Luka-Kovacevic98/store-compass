@@ -8,9 +8,10 @@ interface StoreFloorPlanProps {
   width: number
   height: number
   className?: string
+  showWalls?: boolean
   fixtures?: Array<{
     id: string
-    type: "shelf" | "fridge" | "checkout"
+    type: "shelf" | "fridge" | "checkout" | "entrance"
     label: string
     xPct: number
     yPct: number
@@ -18,6 +19,63 @@ interface StoreFloorPlanProps {
     hPct: number
     rotationDeg: number
   }>
+}
+
+type OpeningSide = "top" | "right" | "bottom" | "left"
+
+interface WallOpening {
+  side: OpeningSide
+  start: number
+  size: number
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function getEntranceOpenings(
+  fixtures: NonNullable<StoreFloorPlanProps["fixtures"]>,
+  width: number,
+  height: number,
+  wallInset: number,
+): WallOpening[] {
+  const entrances = fixtures.filter((f) => f.type === "entrance")
+
+  return entrances.map((entrance) => {
+    const cx = (entrance.xPct / 100) * width + ((entrance.wPct / 100) * width) / 2
+    const cy = (entrance.yPct / 100) * height + ((entrance.hPct / 100) * height) / 2
+
+    const leftEdge = wallInset
+    const rightEdge = width - wallInset
+    const topEdge = wallInset
+    const bottomEdge = height - wallInset
+
+    const distances: Record<OpeningSide, number> = {
+      top: Math.abs(cy - topEdge),
+      right: Math.abs(rightEdge - cx),
+      bottom: Math.abs(bottomEdge - cy),
+      left: Math.abs(cx - leftEdge),
+    }
+
+    let side: OpeningSide = "top"
+    let minDist = distances.top
+    ;(["right", "bottom", "left"] as OpeningSide[]).forEach((candidate) => {
+      if (distances[candidate] < minDist) {
+        side = candidate
+        minDist = distances[candidate]
+      }
+    })
+
+    if (side === "top" || side === "bottom") {
+      const size = clamp((entrance.wPct / 100) * width * 0.95, width * 0.03, width * 0.14)
+      const start = clamp(cx - size / 2, leftEdge + 8, rightEdge - 8 - size)
+      return { side, start, size }
+    }
+
+    const size = clamp((entrance.hPct / 100) * height * 0.95, height * 0.03, height * 0.14)
+    const start = clamp(cy - size / 2, topEdge + 8, bottomEdge - 8 - size)
+    return { side, start, size }
+  })
 }
 
 // Tiny deterministic PRNG so each store renders a stable, unique layout.
@@ -38,8 +96,12 @@ function makeRng(seed: string) {
 
 const DEPARTMENTS = ["Produce", "Bakery", "Dairy", "Frozen", "Deli", "Beverages", "Household"]
 
-function StoreFloorPlan({ seed, width, height, className, fixtures }: StoreFloorPlanProps) {
+function StoreFloorPlan({ seed, width, height, className, fixtures, showWalls = true }: StoreFloorPlanProps) {
   if (fixtures && fixtures.length > 0) {
+    const wallInset = 30
+    const openings = getEntranceOpenings(fixtures, width, height, wallInset)
+    const fixtureWithoutEntrances = fixtures.filter((fixture) => fixture.type !== "entrance")
+
     return (
       <svg
         viewBox={`0 0 ${width} ${height}`}
@@ -55,9 +117,136 @@ function StoreFloorPlan({ seed, width, height, className, fixtures }: StoreFloor
           </pattern>
         </defs>
         <rect x={0} y={0} width={width} height={height} fill="url(#grid)" opacity={0.45} />
+
+        {showWalls && (
+          <>
+            <rect
+              x={wallInset}
+              y={wallInset}
+              width={width - wallInset * 2}
+              height={height - wallInset * 2}
+              rx={16}
+              fill="#0d1729"
+              fill="none"
+              stroke="#475569"
+              strokeWidth={3}
+              strokeOpacity={0.7}
+            />
+            <rect
+              x={wallInset + 2}
+              y={wallInset + 2}
+              width={width - wallInset * 2 - 4}
+              height={height - wallInset * 2 - 4}
+              rx={14}
+              fill="none"
+              stroke="#64748b"
+              strokeWidth={1}
+              strokeOpacity={0.35}
+              strokeDasharray="3 3"
+            />
+            {openings.map((opening, index) => {
+              if (opening.side === "top") {
+                return <rect key={`opening-${index}`} x={opening.start} y={wallInset - 2} width={opening.size} height={5} fill="#0b1220" />
+              }
+              if (opening.side === "bottom") {
+                return (
+                  <rect
+                    key={`opening-${index}`}
+                    x={opening.start}
+                    y={height - wallInset - 3}
+                    width={opening.size}
+                    height={5}
+                    fill="#0b1220"
+                  />
+                )
+              }
+              if (opening.side === "left") {
+                return <rect key={`opening-${index}`} x={wallInset - 2} y={opening.start} width={5} height={opening.size} fill="#0b1220" />
+              }
+              return (
+                <rect
+                  key={`opening-${index}`}
+                  x={width - wallInset - 3}
+                  y={opening.start}
+                  width={5}
+                  height={opening.size}
+                  fill="#0b1220"
+                />
+              )
+            })}
+
+            {openings.map((opening, index) => {
+              if (opening.side === "top") {
+                return (
+                  <text
+                    key={`opening-label-${index}`}
+                    x={opening.start + opening.size / 2}
+                    y={wallInset - 10}
+                    textAnchor="middle"
+                    fontSize={15}
+                    fontWeight={600}
+                    fill="#34d399"
+                    fontFamily="ui-sans-serif, system-ui, sans-serif"
+                  >
+                    Entrance
+                  </text>
+                )
+              }
+              if (opening.side === "bottom") {
+                return (
+                  <text
+                    key={`opening-label-${index}`}
+                    x={opening.start + opening.size / 2}
+                    y={height - wallInset - 10}
+                    textAnchor="middle"
+                    fontSize={15}
+                    fontWeight={600}
+                    fill="#34d399"
+                    fontFamily="ui-sans-serif, system-ui, sans-serif"
+                  >
+                    Entrance
+                  </text>
+                )
+              }
+              if (opening.side === "left") {
+                return (
+                  <text
+                    key={`opening-label-${index}`}
+                    x={wallInset + 12}
+                    y={opening.start + opening.size / 2}
+                    textAnchor="start"
+                    dominantBaseline="middle"
+                    fontSize={15}
+                    fontWeight={600}
+                    fill="#34d399"
+                    fontFamily="ui-sans-serif, system-ui, sans-serif"
+                  >
+                    Entrance
+                  </text>
+                )
+              }
+              return (
+                <text
+                  key={`opening-label-${index}`}
+                  x={width - wallInset - 12}
+                  y={opening.start + opening.size / 2}
+                  textAnchor="end"
+                  dominantBaseline="middle"
+                  fontSize={15}
+                  fontWeight={600}
+                  fill="#34d399"
+                  fontFamily="ui-sans-serif, system-ui, sans-serif"
+                >
+                  Entrance
+                </text>
+              )
+            })}
+          </>
+        )}
+
         <text
-          x={32}
-          y={40}
+          x={54}
+          y={74}
           fontSize={26}
           fontWeight={600}
           fill="#e2e8f0"
@@ -66,7 +255,7 @@ function StoreFloorPlan({ seed, width, height, className, fixtures }: StoreFloor
           Store floor plan
         </text>
 
-        {fixtures.map((fixture) => {
+        {fixtureWithoutEntrances.map((fixture) => {
           const x = (fixture.xPct / 100) * width
           const y = (fixture.yPct / 100) * height
           const w = (fixture.wPct / 100) * width
@@ -74,10 +263,10 @@ function StoreFloorPlan({ seed, width, height, className, fixtures }: StoreFloor
 
           const palette =
             fixture.type === "shelf"
-              ? { fill: "#155e75", stroke: "#67e8f9" }
+              ? { fill: "#1e293b", stroke: "#475569" }
               : fixture.type === "fridge"
-                ? { fill: "#1e3a8a", stroke: "#93c5fd" }
-                : { fill: "#14532d", stroke: "#6ee7b7" }
+                ? { fill: "#243449", stroke: "#5b718a" }
+                : { fill: "#334155", stroke: "#64748b" }
 
           return (
             <g key={fixture.id} transform={`translate(${x + w / 2} ${y + h / 2}) rotate(${fixture.rotationDeg})`}>

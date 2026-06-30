@@ -25,7 +25,7 @@ export interface Hotspot {
   hPct: number
 }
 
-export type FixtureType = "shelf" | "fridge" | "checkout"
+export type FixtureType = "shelf" | "fridge" | "checkout" | "entrance"
 
 export interface Fixture {
   id: string
@@ -55,6 +55,7 @@ export interface Planogram {
   imageUrl: string
   imageWidth: number
   imageHeight: number
+  showWalls?: boolean
   fixtures?: Fixture[]
   items: PlanogramItem[]
 }

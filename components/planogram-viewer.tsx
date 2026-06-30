@@ -180,6 +180,7 @@ function PlanogramViewer({
               seed={planogram.storeRef}
               width={planogram.imageWidth}
               height={planogram.imageHeight}
+              showWalls={planogram.showWalls}
               fixtures={planogram.fixtures}
               className="absolute inset-0 h-full w-full"
             />

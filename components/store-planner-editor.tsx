@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Edit2, Plus, RotateCw, Save, ShoppingBasket, Snowflake, SquareTerminal, Trash2 } from "lucide-react"
+import { DoorOpen, Edit2, Plus, RotateCw, Save, ShoppingBasket, Snowflake, SquareTerminal, Trash2, Wallpaper } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -47,6 +47,7 @@ const DEFAULT_FIXTURE_SIZE: Record<FixtureType, { wPct: number; hPct: number; la
   shelf: { wPct: 18, hPct: 10, label: "Shelf" },
   fridge: { wPct: 14, hPct: 16, label: "Fridge" },
   checkout: { wPct: 16, hPct: 8, label: "Checkout" },
+  entrance: { wPct: 10, hPct: 4, label: "Entrance" },
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -57,16 +58,61 @@ function uid(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}`
 }
 
-function fixtureColor(type: FixtureType) {
+function fixtureColorClasses(type: FixtureType) {
   if (type === "shelf") return "border-cyan-300/70 bg-cyan-300/20"
   if (type === "fridge") return "border-sky-200/80 bg-sky-200/25"
-  return "border-emerald-300/70 bg-emerald-300/20"
+  if (type === "entrance") return "border-emerald-400/80 bg-emerald-400/20"
+  return "border-amber-300/70 bg-amber-300/20"
 }
 
 function fixtureIcon(type: FixtureType) {
   if (type === "shelf") return <ShoppingBasket className="size-3.5" />
   if (type === "fridge") return <Snowflake className="size-3.5" />
+  if (type === "entrance") return <DoorOpen className="size-3.5" />
   return <SquareTerminal className="size-3.5" />
+}
+
+type OpeningSide = "top" | "right" | "bottom" | "left"
+
+interface WallOpening {
+  side: OpeningSide
+  start: number
+  size: number
+}
+
+function getEntranceOpenings(fixtures: Fixture[]): WallOpening[] {
+  const entrances = fixtures.filter((f) => f.type === "entrance")
+
+  return entrances.map((entrance) => {
+    const cx = entrance.xPct + entrance.wPct / 2
+    const cy = entrance.yPct + entrance.hPct / 2
+
+    const distances: Record<OpeningSide, number> = {
+      top: Math.abs(cy - 4),
+      right: Math.abs(96 - cx),
+      bottom: Math.abs(96 - cy),
+      left: Math.abs(cx - 4),
+    }
+
+    let side: OpeningSide = "top"
+    let minDist = distances.top
+    ;(["right", "bottom", "left"] as OpeningSide[]).forEach((candidate) => {
+      if (distances[candidate] < minDist) {
+        side = candidate
+        minDist = distances[candidate]
+      }
+    })
+
+    if (side === "top" || side === "bottom") {
+      const size = clamp(entrance.wPct * 0.95, 4, 20)
+      const start = clamp(cx - size / 2, 8, 92 - size)
+      return { side, start, size }
+    }
+
+    const size = clamp(entrance.hPct * 0.95, 4, 20)
+    const start = clamp(cy - size / 2, 8, 92 - size)
+    return { side, start, size }
+  })
 }
 
 const BLANK_DRAFT: PlannerArticleDraft = {
@@ -101,6 +147,7 @@ function StorePlannerEditor({
   const [editingEntryIndex, setEditingEntryIndex] = useState<number | null>(null)
   /** highlights a saved entry on the canvas */
   const [selectedEntryIndex, setSelectedEntryIndex] = useState<number | null>(null)
+  const [showWalls, setShowWalls] = useState(true)
 
   const [articleDraft, setArticleDraft] = useState<PlannerArticleDraft>(BLANK_DRAFT)
 
@@ -123,6 +170,7 @@ function StorePlannerEditor({
     if (justOpened) {
       if (initialPlanogram) {
         setFixtures(initialPlanogram.fixtures ?? [])
+        setShowWalls(initialPlanogram.showWalls ?? true)
         setEntries(
           initialPlanogram.items.map((item) => {
             const article = allArticles?.find((a) => a.articleId === item.articleId)
@@ -160,6 +208,7 @@ function StorePlannerEditor({
     setDetailsOpen(false)
     setEditingEntryIndex(null)
     setSelectedEntryIndex(null)
+    setShowWalls(true)
     setSaving(false)
     setArticleDraft(BLANK_DRAFT)
   }
@@ -331,6 +380,7 @@ function StorePlannerEditor({
       imageUrl: `/planograms/${store._id}.svg`,
       imageWidth: CANVAS_WIDTH,
       imageHeight: CANVAS_HEIGHT,
+      showWalls,
       fixtures,
       items: planogramItems,
     }
@@ -349,7 +399,7 @@ function StorePlannerEditor({
         if (!next) resetState()
       }}
     >
-      <DialogContent className="max-h-[95vh] max-w-6xl overflow-y-auto">
+      <DialogContent className="flex h-[94vh] max-h-[94vh] max-w-7xl flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>{initialPlanogram ? "Edit Store Planner" : "Create Store Planner"}</DialogTitle>
           <DialogDescription>
@@ -359,9 +409,9 @@ function StorePlannerEditor({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
+        <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[340px_1fr]">
           {/* ---- Sidebar ------------------------------------------------- */}
-          <aside className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto rounded-2xl border border-white/15 bg-white/5 p-3">
+          <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto rounded-2xl border border-white/15 bg-white/5 p-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pre-built fixtures</p>
             <div className="grid grid-cols-1 gap-2">
               <Button variant="glass" onClick={() => addFixture("shelf")}>
@@ -372,6 +422,16 @@ function StorePlannerEditor({
               </Button>
               <Button variant="glass" onClick={() => addFixture("checkout")}>
                 <Plus className="size-4" /> Add checkout
+              </Button>
+              <Button variant="glass" onClick={() => addFixture("entrance")}>
+                <Plus className="size-4" /> Add entrance
+              </Button>
+              <Button
+                variant="glass"
+                className={showWalls ? "border-slate-300/50 bg-slate-300/20" : ""}
+                onClick={() => setShowWalls((v) => !v)}
+              >
+                <Wallpaper className="size-4" /> {showWalls ? "Hide walls" : "Show walls"}
               </Button>
             </div>
 
@@ -421,6 +481,35 @@ function StorePlannerEditor({
               >
                 <Trash2 className="size-4" /> Remove fixture
               </Button>
+            </div>
+
+            <div className="flex min-h-44 max-h-60 flex-col gap-1.5 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-2.5">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Fixtures ({fixtures.length})
+              </p>
+              {fixtures.length === 0 && (
+                <p className="text-xs text-muted-foreground">No fixtures added yet.</p>
+              )}
+              {fixtures.map((fixture, idx) => (
+                <button
+                  key={fixture.id}
+                  type="button"
+                  className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors ${
+                    selectedFixtureId === fixture.id
+                      ? "border-cyan-300/70 bg-cyan-300/20"
+                      : "border-white/10 bg-white/5 hover:bg-white/10"
+                  }`}
+                  onClick={() => {
+                    setSelectedFixtureId(fixture.id)
+                    setSelectedEntryIndex(null)
+                  }}
+                >
+                  {fixtureIcon(fixture.type)}
+                  <span className="truncate text-xs text-foreground">
+                    {idx + 1}. {fixture.label}
+                  </span>
+                </button>
+              ))}
             </div>
 
             {/* Article placements list */}
@@ -484,21 +573,75 @@ function StorePlannerEditor({
           </aside>
 
           {/* ---- Canvas -------------------------------------------------- */}
-          <div>
+          <div className="min-h-0">
             <div
               ref={canvasRef}
-              className="relative w-full overflow-hidden rounded-2xl border border-white/15 bg-slate-950"
-              style={{ aspectRatio: "3 / 2" }}
+              className="relative h-full min-h-[520px] w-full overflow-hidden rounded-2xl border border-white/15 bg-slate-950"
               onPointerMove={onPointerMove}
               onPointerUp={clearAction}
               onPointerLeave={clearAction}
-              onClick={() => {
+              onPointerDown={(event) => {
+                if (event.target !== event.currentTarget) return
                 setSelectedFixtureId(null)
                 setSelectedEntryIndex(null)
               }}
             >
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(56,189,248,0.16),transparent_50%),linear-gradient(120deg,rgba(15,23,42,0.95),rgba(30,41,59,0.86))]" />
               <div className="pointer-events-none absolute inset-0 opacity-25 [background-image:linear-gradient(to_right,rgba(148,163,184,0.18)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.18)_1px,transparent_1px)] [background-size:50px_50px]" />
+
+              {/* Store walls overlay */}
+              {showWalls && (
+                <svg
+                  className="pointer-events-none absolute inset-0 h-full w-full"
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="none"
+                >
+                  {(() => {
+                    const openings = getEntranceOpenings(fixtures)
+                    return (
+                      <>
+                  {/* Primary wall border */}
+                  <rect
+                    x="4"
+                    y="4"
+                    width="92"
+                    height="92"
+                    rx="2.8"
+                    fill="none"
+                    stroke="#67e8f9"
+                    strokeWidth="1.8"
+                    strokeOpacity="0.95"
+                  />
+                  {/* Secondary inset border */}
+                  <rect
+                    x="6"
+                    y="6"
+                    width="88"
+                    height="88"
+                    rx="2"
+                    fill="none"
+                    stroke="#a5f3fc"
+                    strokeWidth="0.5"
+                    strokeOpacity="0.75"
+                    strokeDasharray="2 1.5"
+                  />
+                        {openings.map((opening, index) => {
+                          if (opening.side === "top") {
+                            return <rect key={`opening-${index}`} x={opening.start} y="2.8" width={opening.size} height="3.4" fill="#0f172a" />
+                          }
+                          if (opening.side === "bottom") {
+                            return <rect key={`opening-${index}`} x={opening.start} y="93.8" width={opening.size} height="3.4" fill="#0f172a" />
+                          }
+                          if (opening.side === "left") {
+                            return <rect key={`opening-${index}`} x="2.8" y={opening.start} width="3.4" height={opening.size} fill="#0f172a" />
+                          }
+                          return <rect key={`opening-${index}`} x="93.8" y={opening.start} width="3.4" height={opening.size} fill="#0f172a" />
+                        })}
+                      </>
+                    )
+                  })()}
+                </svg>
+              )}
 
               {/* Fixtures */}
               {fixtures.map((fixture) => {
@@ -508,7 +651,9 @@ function StorePlannerEditor({
                     ? "border-cyan-300/70 bg-cyan-300/20"
                     : fixture.type === "fridge"
                       ? "border-sky-200/80 bg-sky-200/25"
-                      : "border-emerald-300/70 bg-emerald-300/20"
+                      : fixture.type === "entrance"
+                        ? "border-emerald-400/80 bg-emerald-400/20"
+                        : "border-amber-300/70 bg-amber-300/20"
                 return (
                   <div
                     key={fixture.id}
