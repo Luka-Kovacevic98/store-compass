@@ -1,6 +1,32 @@
 import type { Store, Article, Planogram } from "./types"
 
+interface OrgUnit {
+  _id?: string
+  id?: string
+  name?: string
+  namepath?: string
+  externalRef?: string
+  code?: string
+  storeCode?: string
+  city?: string
+  country?: string
+  children?: unknown[]
+}
+
+interface OrgUnitsResponse {
+  data?: OrgUnit[]
+}
+
 const STORAGE_KEY = "store-compass-mock-data-v1"
+const COUNTRY_BY_CODE: Record<string, string> = {
+  DE: "Germany",
+  ES: "Spain",
+  NL: "Netherlands",
+  FR: "France",
+  PT: "Portugal",
+  IT: "Italy",
+  BE: "Belgium",
+}
 
 // ---------------------------------------------------------------------------
 // stores.json — shape mirrors a real internal "Keephub" store record.
@@ -271,7 +297,57 @@ function delay<T>(value: T, ms = NETWORK_DELAY): Promise<T> {
 }
 
 export function fetchStores(): Promise<Store[]> {
-  return delay(stores)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10000)
+
+  return fetch("/api/orgunits", { cache: "no-store", signal: controller.signal })
+    .then(async (res) => {
+      if (!res.ok) return []
+      const body = (await res.json()) as OrgUnitsResponse
+      const rows = Array.isArray(body.data) ? body.data : []
+      return rows.filter(isStoreOrgUnit).map(mapOrgUnitToStore)
+    })
+    .catch(() => [])
+    .finally(() => {
+      clearTimeout(timeout)
+    })
+}
+
+function splitNamePath(namePath: string): string[] {
+  return namePath
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
+function isStoreOrgUnit(unit: OrgUnit): boolean {
+  const parts = splitNamePath(unit.namepath ?? "")
+  const children = Array.isArray(unit.children) ? unit.children : []
+  const underStores = parts.length >= 2 && parts[1].toLowerCase() === "stores"
+  const atStoreDepth = parts.length >= 5
+  return underStores && atStoreDepth && children.length === 0
+}
+
+function deriveCity(storeName: string): string {
+  const [city] = storeName.split(" - ")
+  return city?.trim() || storeName || "Unknown city"
+}
+
+function mapOrgUnitToStore(unit: OrgUnit, index: number): Store {
+  const parts = splitNamePath(unit.namepath ?? "")
+  const id = unit._id || unit.id || `orgunit-${index + 1}`
+  const name = unit.name || parts[parts.length - 1] || `Store ${index + 1}`
+  const countryCode = (parts[2] || "").toUpperCase()
+
+  return {
+    _id: id,
+    name,
+    externalRef: unit.externalRef || unit.code || unit.storeCode || id,
+    contactInformation: {
+      city: unit.city || deriveCity(name),
+      country: unit.country || COUNTRY_BY_CODE[countryCode] || countryCode || "Unknown country",
+    },
+  }
 }
 
 export function fetchArticles(): Promise<Article[]> {

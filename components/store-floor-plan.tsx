@@ -127,7 +127,6 @@ function StoreFloorPlan({ seed, width, height, className, fixtures, showWalls = 
               height={height - wallInset * 2}
               rx={16}
               fill="#0d1729"
-              fill="none"
               stroke="#475569"
               strokeWidth={3}
               strokeOpacity={0.7}

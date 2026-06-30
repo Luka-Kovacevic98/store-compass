@@ -27,12 +27,16 @@ export default function Page() {
   // Load the store + article catalogs once (mocked, simulated latency).
   useEffect(() => {
     let active = true
-    Promise.all([fetchStores(), fetchArticles()]).then(([s, a]) => {
+
+    ;(async () => {
+      const [storesResult, articlesResult] = await Promise.allSettled([fetchStores(), fetchArticles()])
       if (!active) return
-      setStores(s)
-      setArticles(a)
+
+      setStores(storesResult.status === "fulfilled" ? storesResult.value : [])
+      setArticles(articlesResult.status === "fulfilled" ? articlesResult.value : [])
       setListsLoading(false)
-    })
+    })()
+
     return () => {
       active = false
     }
