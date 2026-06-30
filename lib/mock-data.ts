@@ -1,5 +1,7 @@
 import type { Store, Article, Planogram } from "./types"
 
+const STORAGE_KEY = "store-compass-mock-data-v1"
+
 // ---------------------------------------------------------------------------
 // stores.json — shape mirrors a real internal "Keephub" store record.
 // Field names are kept exact so they can later be populated from a real API.
@@ -215,6 +217,49 @@ export const planograms: Planogram[] = [
   // Lisbon (test0043) intentionally has NO planogram to exercise the empty state.
 ]
 
+let mutableArticles: Article[] = [...articles]
+let mutablePlanograms: Planogram[] = [...planograms]
+let storageLoaded = false
+
+function canUseStorage() {
+  return typeof window !== "undefined" && typeof window.localStorage !== "undefined"
+}
+
+function loadFromStorage() {
+  if (storageLoaded || !canUseStorage()) return
+  storageLoaded = true
+
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return
+
+    const parsed = JSON.parse(raw) as {
+      articles?: Article[]
+      planograms?: Planogram[]
+    }
+
+    if (Array.isArray(parsed.articles)) {
+      mutableArticles = parsed.articles
+    }
+    if (Array.isArray(parsed.planograms)) {
+      mutablePlanograms = parsed.planograms
+    }
+  } catch {
+    // Ignore malformed local storage and keep default seed data.
+  }
+}
+
+function persistToStorage() {
+  if (!canUseStorage()) return
+  const payload = JSON.stringify({ articles: mutableArticles, planograms: mutablePlanograms })
+  window.localStorage.setItem(STORAGE_KEY, payload)
+}
+
+function nextArticleId() {
+  const base = mutableArticles.length + 1
+  return `art_${String(base).padStart(4, "0")}`
+}
+
 // ---------------------------------------------------------------------------
 // Async "fetch" functions. Swap the bodies for real API calls later — the
 // signatures and return shapes can stay the same.
@@ -230,10 +275,40 @@ export function fetchStores(): Promise<Store[]> {
 }
 
 export function fetchArticles(): Promise<Article[]> {
-  return delay(articles)
+  loadFromStorage()
+  return delay(mutableArticles)
 }
 
 export function fetchPlanogram(storeId: string): Promise<Planogram | null> {
-  const match = planograms.find((p) => p.storeRef === storeId) ?? null
+  loadFromStorage()
+  const match = mutablePlanograms.find((p) => p.storeRef === storeId) ?? null
   return delay(match)
+}
+
+export function createMockArticle(input: Omit<Article, "articleId">): Promise<Article> {
+  loadFromStorage()
+  const existing = mutableArticles.find((a) => a.sku.toLowerCase() === input.sku.toLowerCase())
+  if (existing) {
+    return delay(existing)
+  }
+
+  const created: Article = {
+    articleId: nextArticleId(),
+    name: input.name,
+    sku: input.sku,
+    category: input.category,
+  }
+  mutableArticles = [...mutableArticles, created]
+  persistToStorage()
+  return delay(created)
+}
+
+export function saveMockPlanogram(nextPlanogram: Planogram): Promise<Planogram> {
+  loadFromStorage()
+  mutablePlanograms = [
+    ...mutablePlanograms.filter((p) => p.storeRef !== nextPlanogram.storeRef),
+    nextPlanogram,
+  ]
+  persistToStorage()
+  return delay(nextPlanogram)
 }

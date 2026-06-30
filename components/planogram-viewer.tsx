@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { ImageOff, Map, MapPinned, Minus, Plus, RotateCcw, Store as StoreIcon, TriangleAlert } from "lucide-react"
+import { Edit2, ImageOff, Map, MapPinned, Minus, Plus, RotateCcw, Store as StoreIcon, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import StoreFloorPlan from "@/components/store-floor-plan"
 import HotspotOverlay from "@/components/hotspot-overlay"
@@ -14,13 +14,24 @@ interface PlanogramViewerProps {
   article: Article | null
   matchedItem: PlanogramItem | null
   onHotspotClick: () => void
+  onCreatePlanner: () => void
+  onEditPlanner: () => void
 }
 
 const ZOOM_STEP = 0.25
 const ZOOM_MIN = 1
 const ZOOM_MAX = 2.5
 
-function PlanogramViewer({ store, planogram, loading, article, matchedItem, onHotspotClick }: PlanogramViewerProps) {
+function PlanogramViewer({
+  store,
+  planogram,
+  loading,
+  article,
+  matchedItem,
+  onHotspotClick,
+  onCreatePlanner,
+  onEditPlanner,
+}: PlanogramViewerProps) {
   const [zoom, setZoom] = useState(1)
   const scrollRef = useRef<HTMLDivElement>(null)
   const hotspotWrapRef = useRef<HTMLDivElement>(null)
@@ -62,6 +73,17 @@ function PlanogramViewer({ store, planogram, loading, article, matchedItem, onHo
 
         {planogram && (
           <div className="flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/5 p-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-label="Edit planner"
+              title="Edit planner layout and articles"
+              onClick={onEditPlanner}
+            >
+              <Edit2 className="size-4" />
+            </Button>
+            <span className="mx-0.5 h-5 w-px bg-white/20" />
             <Button
               variant="ghost"
               size="icon"
@@ -138,7 +160,12 @@ function PlanogramViewer({ store, planogram, loading, article, matchedItem, onHo
         <EmptyState
           icon={<ImageOff className="size-8" />}
           title="No floor plan available for this store yet"
-          description="This location hasn't been mapped. Try another store."
+          description="This location hasn't been mapped. Create a planner to design fixture layout and article placement."
+          action={
+            <Button className="mt-4" onClick={onCreatePlanner}>
+              Create store planner
+            </Button>
+          }
         />
       ) : (
         <div
@@ -153,6 +180,7 @@ function PlanogramViewer({ store, planogram, loading, article, matchedItem, onHo
               seed={planogram.storeRef}
               width={planogram.imageWidth}
               height={planogram.imageHeight}
+              fixtures={planogram.fixtures}
               className="absolute inset-0 h-full w-full"
             />
             {matchedItem && article && (
@@ -184,10 +212,12 @@ function EmptyState({
   icon,
   title,
   description,
+  action,
 }: {
   icon: React.ReactNode
   title: string
   description: string
+  action?: React.ReactNode
 }) {
   return (
     <div className="flex aspect-[3/2] flex-col items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/5 px-6 text-center">
@@ -196,6 +226,7 @@ function EmptyState({
       </span>
       <h3 className="text-balance text-base font-semibold text-foreground">{title}</h3>
       <p className="mt-1 max-w-xs text-pretty text-sm text-muted-foreground">{description}</p>
+      {action}
     </div>
   )
 }

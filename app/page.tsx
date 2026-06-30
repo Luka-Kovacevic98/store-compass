@@ -6,7 +6,8 @@ import StoreCombobox from "@/components/store-combobox"
 import ArticleCombobox from "@/components/article-combobox"
 import PlanogramViewer from "@/components/planogram-viewer"
 import ShelfDetailModal from "@/components/shelf-detail-modal"
-import { fetchArticles, fetchPlanogram, fetchStores } from "@/lib/mock-data"
+import StorePlannerEditor, { type PlannerEntry } from "@/components/store-planner-editor"
+import { createMockArticle, fetchArticles, fetchPlanogram, fetchStores, saveMockPlanogram } from "@/lib/mock-data"
 import type { Article, Planogram, Store } from "@/lib/types"
 
 export default function Page() {
@@ -21,6 +22,7 @@ export default function Page() {
   const [planogramLoading, setPlanogramLoading] = useState(false)
 
   const [modalOpen, setModalOpen] = useState(false)
+  const [plannerOpen, setPlannerOpen] = useState(false)
 
   // Load the store + article catalogs once (mocked, simulated latency).
   useEffect(() => {
@@ -59,6 +61,35 @@ export default function Page() {
     if (!planogram || !selectedArticle) return null
     return planogram.items.find((item) => item.articleId === selectedArticle.articleId) ?? null
   }, [planogram, selectedArticle])
+
+  async function handleSavePlanner(payload: { planogram: Planogram; entries: PlannerEntry[] }) {
+    const savedItems = await Promise.all(
+      payload.entries.map(async (entry, index) => {
+        const article = await createMockArticle({
+          name: entry.details.articleName,
+          sku: entry.details.sku,
+          category: entry.details.category,
+        })
+
+        return {
+          ...payload.planogram.items[index],
+          articleId: article.articleId,
+          hotspot: entry.hotspot,
+        }
+      }),
+    )
+
+    const savedPlanogram = await saveMockPlanogram({ ...payload.planogram, items: savedItems })
+    const nextArticles = await fetchArticles()
+
+    setArticles(nextArticles)
+    setPlanogram(savedPlanogram)
+
+    if (selectedArticle) {
+      const maybeCurrent = nextArticles.find((a) => a.articleId === selectedArticle.articleId) ?? null
+      setSelectedArticle(maybeCurrent)
+    }
+  }
 
   return (
     <main className="min-h-dvh bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900">
@@ -112,6 +143,8 @@ export default function Page() {
           article={selectedArticle}
           matchedItem={matchedItem}
           onHotspotClick={() => setModalOpen(true)}
+          onCreatePlanner={() => setPlannerOpen(true)}
+          onEditPlanner={() => setPlannerOpen(true)}
         />
       </div>
 
@@ -120,6 +153,15 @@ export default function Page() {
         onOpenChange={setModalOpen}
         article={selectedArticle}
         item={matchedItem}
+      />
+
+      <StorePlannerEditor
+        open={plannerOpen}
+        store={selectedStore}
+        onOpenChange={setPlannerOpen}
+        onSave={handleSavePlanner}
+        initialPlanogram={planogram}
+        allArticles={articles}
       />
     </main>
   )

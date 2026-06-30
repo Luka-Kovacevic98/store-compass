@@ -8,6 +8,16 @@ interface StoreFloorPlanProps {
   width: number
   height: number
   className?: string
+  fixtures?: Array<{
+    id: string
+    type: "shelf" | "fridge" | "checkout"
+    label: string
+    xPct: number
+    yPct: number
+    wPct: number
+    hPct: number
+    rotationDeg: number
+  }>
 }
 
 // Tiny deterministic PRNG so each store renders a stable, unique layout.
@@ -28,7 +38,79 @@ function makeRng(seed: string) {
 
 const DEPARTMENTS = ["Produce", "Bakery", "Dairy", "Frozen", "Deli", "Beverages", "Household"]
 
-function StoreFloorPlan({ seed, width, height, className }: StoreFloorPlanProps) {
+function StoreFloorPlan({ seed, width, height, className, fixtures }: StoreFloorPlanProps) {
+  if (fixtures && fixtures.length > 0) {
+    return (
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className={className}
+        role="img"
+        aria-label="Custom store floor plan showing manually placed fixtures"
+        preserveAspectRatio="xMidYMid meet"
+      >
+        <rect x={0} y={0} width={width} height={height} fill="#0b1220" />
+        <defs>
+          <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+            <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#94a3b8" strokeOpacity="0.2" strokeWidth="1" />
+          </pattern>
+        </defs>
+        <rect x={0} y={0} width={width} height={height} fill="url(#grid)" opacity={0.45} />
+        <text
+          x={32}
+          y={40}
+          fontSize={26}
+          fontWeight={600}
+          fill="#e2e8f0"
+          fontFamily="ui-sans-serif, system-ui, sans-serif"
+        >
+          Store floor plan
+        </text>
+
+        {fixtures.map((fixture) => {
+          const x = (fixture.xPct / 100) * width
+          const y = (fixture.yPct / 100) * height
+          const w = (fixture.wPct / 100) * width
+          const h = (fixture.hPct / 100) * height
+
+          const palette =
+            fixture.type === "shelf"
+              ? { fill: "#155e75", stroke: "#67e8f9" }
+              : fixture.type === "fridge"
+                ? { fill: "#1e3a8a", stroke: "#93c5fd" }
+                : { fill: "#14532d", stroke: "#6ee7b7" }
+
+          return (
+            <g key={fixture.id} transform={`translate(${x + w / 2} ${y + h / 2}) rotate(${fixture.rotationDeg})`}>
+              <rect
+                x={-w / 2}
+                y={-h / 2}
+                width={w}
+                height={h}
+                rx={10}
+                fill={palette.fill}
+                fillOpacity={0.55}
+                stroke={palette.stroke}
+                strokeWidth={2}
+              />
+              <text
+                x={0}
+                y={0}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fontSize={12}
+                fontWeight={700}
+                fill="#f8fafc"
+                fontFamily="ui-sans-serif, system-ui, sans-serif"
+              >
+                {fixture.label}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
+    )
+  }
+
   const rng = makeRng(seed)
 
   const wall = 30
