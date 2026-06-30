@@ -59,7 +59,7 @@ function PlanogramViewer({
       className="rounded-2xl border border-white/20 bg-white/10 p-4 shadow-xl backdrop-blur-lg sm:p-5"
     >
       <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" >
           <span className="flex size-9 items-center justify-center rounded-xl bg-accent/20 text-accent">
             <StoreIcon className="size-5" />
           </span>

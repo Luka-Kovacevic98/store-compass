@@ -367,18 +367,22 @@ function StorePlannerEditor({
             yPct: clamp(action.startRect.yPct + dyPct, 0, 100 - entry.hotspot.hPct),
           }
 
-          if (!entry.linkedFixtureId) {
-            return { ...entry, hotspot: nextHotspot }
-          }
+          const linkedFixture = findLinkedFixture(nextHotspot, fixtures)
 
-          const linkedFixture = fixtures.find((fixture) => fixture.id === entry.linkedFixtureId)
           if (!linkedFixture) {
-            return { ...entry, hotspot: nextHotspot }
+            return {
+              ...entry,
+              hotspot: nextHotspot,
+              linkedFixtureId: null,
+              fixtureOffsetXPct: undefined,
+              fixtureOffsetYPct: undefined,
+            }
           }
 
           return {
             ...entry,
             hotspot: nextHotspot,
+            linkedFixtureId: linkedFixture.id,
             fixtureOffsetXPct: nextHotspot.xPct - linkedFixture.xPct,
             fixtureOffsetYPct: nextHotspot.yPct - linkedFixture.yPct,
           }
