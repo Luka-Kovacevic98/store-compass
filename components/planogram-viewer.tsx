@@ -1,9 +1,9 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { ImageOff, Map, MapPinned, Minus, Plus, RotateCcw, TriangleAlert } from "lucide-react"
+import { ImageOff, Map, MapPinned, Minus, Plus, RotateCcw, Store as StoreIcon, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import PlanogramGraphic from "@/components/planogram-graphic"
+import StoreFloorPlan from "@/components/store-floor-plan"
 import HotspotOverlay from "@/components/hotspot-overlay"
 import type { Article, PlanogramItem, Planogram, Store } from "@/lib/types"
 
@@ -44,16 +44,16 @@ function PlanogramViewer({ store, planogram, loading, article, matchedItem, onHo
 
   return (
     <section
-      aria-label="Planogram"
+      aria-label="Store floor plan"
       className="rounded-2xl border border-white/20 bg-white/10 p-4 shadow-xl backdrop-blur-lg sm:p-5"
     >
       <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="flex size-9 items-center justify-center rounded-xl bg-accent/20 text-accent">
-            <Map className="size-5" />
+            <StoreIcon className="size-5" />
           </span>
           <div>
-            <h2 className="text-sm font-semibold leading-tight text-foreground">Planogram</h2>
+            <h2 className="text-sm font-semibold leading-tight text-foreground">Store floor plan</h2>
             <p className="text-xs text-muted-foreground">
               {store ? store.name : "No store selected"}
             </p>
@@ -118,8 +118,9 @@ function PlanogramViewer({ store, planogram, loading, article, matchedItem, onHo
         >
           <MapPinned className="size-5 shrink-0 text-accent" />
           <p className="text-sm">
-            <span className="font-medium">{article.name}</span> located — tap the glowing marker for placement
-            details.
+            <span className="font-medium">{article.name}</span> located in{" "}
+            <span className="font-medium text-accent">{matchedItem.aisle}</span> — tap the glowing marker for the aisle
+            overview and placement details.
           </p>
         </div>
       )}
@@ -130,13 +131,13 @@ function PlanogramViewer({ store, planogram, loading, article, matchedItem, onHo
       ) : !store ? (
         <EmptyState
           icon={<Map className="size-8" />}
-          title="Select a store to view its planogram"
-          description="Choose a store from the dropdown above to load its shelf layout."
+          title="Select a store to view its floor plan"
+          description="Choose a store from the dropdown above to load its overhead layout."
         />
       ) : !planogram ? (
         <EmptyState
           icon={<ImageOff className="size-8" />}
-          title="No planogram available for this store yet"
+          title="No floor plan available for this store yet"
           description="This location hasn't been mapped. Try another store."
         />
       ) : (
@@ -148,7 +149,7 @@ function PlanogramViewer({ store, planogram, loading, article, matchedItem, onHo
             className="relative mx-auto"
             style={{ width: `${zoom * 100}%`, aspectRatio, minWidth: zoom > 1 ? "100%" : undefined }}
           >
-            <PlanogramGraphic
+            <StoreFloorPlan
               seed={planogram.storeRef}
               width={planogram.imageWidth}
               height={planogram.imageHeight}

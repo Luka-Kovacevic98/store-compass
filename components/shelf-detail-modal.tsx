@@ -2,8 +2,15 @@
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import ShelfGraphic from "@/components/shelf-graphic"
+import PlanogramGraphic from "@/components/planogram-graphic"
 import { Compass, Layers, Move3d, Rows3 } from "lucide-react"
 import type { Article, PlanogramItem } from "@/lib/types"
+
+// Parse the 1-based bay number out of a label like "Bay 2".
+function parseBayNumber(bay: string): number | undefined {
+  const match = bay.match(/\d+/)
+  return match ? Number(match[0]) : undefined
+}
 
 interface ShelfDetailModalProps {
   open: boolean
@@ -29,18 +36,40 @@ function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: strin
 function ShelfDetailModal({ open, onOpenChange, article, item }: ShelfDetailModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
         {article && item && (
           <>
             <DialogHeader>
               <DialogTitle>{article.name}</DialogTitle>
               <DialogDescription>
-                {article.sku} · {article.category}
+                {item.aisle} · {article.sku} · {article.category}
               </DialogDescription>
             </DialogHeader>
 
-            <div className="overflow-hidden rounded-2xl border border-white/15 bg-white/5">
-              <ShelfGraphic productName={article.name} unitsPerRow={item.unitsPerRow} className="h-auto w-full" />
+            {/* Aisle overview — the elevation of the target aisle with the bay highlighted */}
+            <div>
+              <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {item.aisle} — aisle overview
+              </p>
+              <div className="overflow-hidden rounded-2xl border border-white/15 bg-white/5">
+                <PlanogramGraphic
+                  seed={`${article.articleId}-${item.aisle}`}
+                  width={1200}
+                  height={800}
+                  highlightBay={parseBayNumber(item.bay)}
+                  className="h-auto w-full"
+                />
+              </div>
+            </div>
+
+            {/* Shelf close-up — exact slot on the target shelf */}
+            <div>
+              <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Exact shelf placement
+              </p>
+              <div className="overflow-hidden rounded-2xl border border-white/15 bg-white/5">
+                <ShelfGraphic productName={article.name} unitsPerRow={item.unitsPerRow} className="h-auto w-full" />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2.5">

@@ -7,6 +7,8 @@ interface PlanogramGraphicProps {
   width: number
   height: number
   className?: string
+  // 1-based index of the bay to highlight as the target (optional).
+  highlightBay?: number
 }
 
 // Tiny deterministic PRNG so each store renders a stable, unique layout.
@@ -27,7 +29,7 @@ function makeRng(seed: string) {
 
 const SLOT_COLORS = ["#38bdf8", "#22d3ee", "#818cf8", "#34d399", "#fbbf24", "#f472b6", "#a3e635"]
 
-function PlanogramGraphic({ seed, width, height, className }: PlanogramGraphicProps) {
+function PlanogramGraphic({ seed, width, height, className, highlightBay }: PlanogramGraphicProps) {
   const rng = makeRng(seed)
   const bays = 4
   const bayGap = 28
@@ -75,6 +77,7 @@ function PlanogramGraphic({ seed, width, height, className }: PlanogramGraphicPr
         </g>,
       )
     }
+    const isTargetBay = highlightBay === b + 1
     bayEls.push(
       <g key={`bay-${b}`}>
         {/* bay frame */}
@@ -84,10 +87,11 @@ function PlanogramGraphic({ seed, width, height, className }: PlanogramGraphicPr
           width={bayWidth + 12}
           height={usableHeight + 22}
           rx={10}
-          fill="#1e293b"
-          opacity={0.35}
-          stroke="#475569"
-          strokeOpacity={0.4}
+          fill={isTargetBay ? "#0e3a44" : "#1e293b"}
+          opacity={isTargetBay ? 0.7 : 0.35}
+          stroke={isTargetBay ? "#22d3ee" : "#475569"}
+          strokeWidth={isTargetBay ? 3 : 1}
+          strokeOpacity={isTargetBay ? 0.95 : 0.4}
         />
         {shelves}
         <text
@@ -95,11 +99,25 @@ function PlanogramGraphic({ seed, width, height, className }: PlanogramGraphicPr
           y={height - bottomOffset + 32}
           textAnchor="middle"
           fontSize={20}
-          fill="#cbd5e1"
+          fontWeight={isTargetBay ? 700 : 400}
+          fill={isTargetBay ? "#67e8f9" : "#cbd5e1"}
           fontFamily="ui-sans-serif, system-ui, sans-serif"
         >
-          {`Bay ${b + 1}`}
+          {isTargetBay ? `Bay ${b + 1} ·` : `Bay ${b + 1}`}
         </text>
+        {isTargetBay && (
+          <text
+            x={bx + bayWidth / 2}
+            y={topOffset - 22}
+            textAnchor="middle"
+            fontSize={16}
+            fontWeight={700}
+            fill="#22d3ee"
+            fontFamily="ui-sans-serif, system-ui, sans-serif"
+          >
+            ▼ TARGET
+          </text>
+        )}
       </g>,
     )
   }
