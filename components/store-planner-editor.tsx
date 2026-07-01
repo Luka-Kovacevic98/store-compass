@@ -1,7 +1,20 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { DoorOpen, Edit2, Plus, RotateCw, Save, ShoppingBasket, Snowflake, SquareTerminal, Trash2, Wallpaper } from "lucide-react"
+import {
+  AlertTriangle,
+  DoorOpen,
+  Edit2,
+  ImageUp,
+  Plus,
+  RotateCw,
+  Save,
+  ShoppingBasket,
+  Snowflake,
+  SquareTerminal,
+  Trash2,
+  Wallpaper,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -35,6 +48,37 @@ interface PlannerEntry {
   fixtureOffsetYPct?: number
 }
 
+type ImportedFixtureType =
+  | "shelf"
+  | "fridge"
+  | "checkout"
+  | "clothing_rack"
+  | "gondola"
+  | "entrance"
+  | "exit"
+  | "wall"
+  | "register"
+  | "impulse_buy"
+  | "atm"
+
+interface ImportedModelFixture {
+  id: string
+  type: ImportedFixtureType
+  xPct: number
+  yPct: number
+  wPct: number
+  hPct: number
+  rotation: number
+  confidence: number
+  label: string
+  wall?: "left" | "right" | "top" | "bottom" | "none"
+}
+
+type EditorFixture = Fixture & {
+  confidence?: number
+  importedType?: ImportedFixtureType
+}
+
 interface StorePlannerEditorProps {
   open: boolean
   store: Store | null
@@ -59,6 +103,14 @@ function clamp(value: number, min: number, max: number) {
 
 function uid(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}`
+}
+
+function mapImportedTypeToFixtureType(type: ImportedFixtureType): FixtureType {
+  if (type === "fridge") return "fridge"
+  if (type === "checkout") return "checkout"
+  if (type === "entrance" || type === "exit") return "entrance"
+  // clothing_rack, gondola and wall are best approximated as shelf blocks in the current editor.
+  return "shelf"
 }
 
 function isLinkableFixtureType(type: FixtureType) {
@@ -166,7 +218,7 @@ function StorePlannerEditor({
 }: StorePlannerEditorProps) {
   const canvasRef = useRef<HTMLDivElement>(null)
 
-  const [fixtures, setFixtures] = useState<Fixture[]>([])
+  const [fixtures, setFixtures] = useState<EditorFixture[]>([])
   const [entries, setEntries] = useState<PlannerEntry[]>([])
   const [selectedFixtureId, setSelectedFixtureId] = useState<string | null>(null)
   const [pendingHotspot, setPendingHotspot] = useState<Hotspot | null>(null)
@@ -178,6 +230,13 @@ function StorePlannerEditor({
   const [selectedEntryIndex, setSelectedEntryIndex] = useState<number | null>(null)
   const [showWalls, setShowWalls] = useState(true)
   const [pendingLinkedFixtureId, setPendingLinkedFixtureId] = useState<string | null>(null)
+  const [importModalOpen, setImportModalOpen] = useState(false)
+  const [importPreviewUrl, setImportPreviewUrl] = useState<string | null>(null)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importLoading, setImportLoading] = useState(false)
+  const [showLowConfidenceBanner, setShowLowConfidenceBanner] = useState(false)
+  const [lowConfidenceFixtureIds, setLowConfidenceFixtureIds] = useState<Set<string>>(new Set())
 
   const [articleDraft, setArticleDraft] = useState<PlannerArticleDraft>(BLANK_DRAFT)
 
@@ -192,6 +251,14 @@ function StorePlannerEditor({
 
   const prevOpenRef = useRef(false)
 
+  useEffect(() => {
+    return () => {
+      if (importPreviewUrl) {
+        URL.revokeObjectURL(importPreviewUrl)
+      }
+    }
+  }, [importPreviewUrl])
+
   // Load / reset state whenever the editor is opened
   useEffect(() => {
     const justOpened = open && !prevOpenRef.current
@@ -203,6 +270,8 @@ function StorePlannerEditor({
         const initialFixtures = initialPlanogram.fixtures ?? []
         setFixtures(initialFixtures)
         setShowWalls(initialPlanogram.showWalls ?? true)
+        setShowLowConfidenceBanner(false)
+        setLowConfidenceFixtureIds(new Set())
         setEntries(
           initialPlanogram.items.map((item) => {
             const article = allArticles?.find((a) => a.articleId === item.articleId)
@@ -251,7 +320,150 @@ function StorePlannerEditor({
     setPendingLinkedFixtureId(null)
     setShowWalls(true)
     setSaving(false)
+    setImportModalOpen(false)
+    if (importPreviewUrl) {
+      URL.revokeObjectURL(importPreviewUrl)
+    }
+    setImportPreviewUrl(null)
+    setImportFile(null)
+    setImportError(null)
+    setImportLoading(false)
+    setShowLowConfidenceBanner(false)
+    setLowConfidenceFixtureIds(new Set())
     setArticleDraft(BLANK_DRAFT)
+  }
+
+  function handleImportFileSelect(file: File | null) {
+    if (!file) {
+      setImportFile(null)
+      if (importPreviewUrl) {
+        URL.revokeObjectURL(importPreviewUrl)
+      }
+      setImportPreviewUrl(null)
+      return
+    }
+
+    if (file.type !== "image/png" && file.type !== "image/jpeg") {
+      setImportError("Only PNG and JPEG files are supported.")
+      return
+    }
+
+    setImportError(null)
+    if (importPreviewUrl) {
+      URL.revokeObjectURL(importPreviewUrl)
+    }
+    setImportFile(file)
+    setImportPreviewUrl(URL.createObjectURL(file))
+  }
+
+  async function analyzeFloorPlanImport() {
+    if (!store) {
+      setImportError("Please select a store first.")
+      return
+    }
+    if (!importFile) {
+      setImportError("Please choose a PNG or JPEG image.")
+      return
+    }
+
+    setImportLoading(true)
+    setImportError(null)
+
+    try {
+      const imageBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const result = typeof reader.result === "string" ? reader.result : ""
+          const commaIndex = result.indexOf(",")
+          if (commaIndex < 0) {
+            reject(new Error("Unable to read the selected file."))
+            return
+          }
+          resolve(result.slice(commaIndex + 1))
+        }
+        reader.onerror = () => reject(new Error("Unable to read the selected file."))
+        reader.readAsDataURL(importFile)
+      })
+
+      const response = await fetch("/api/imports/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageBase64,
+          mimeType: importFile.type,
+          storeId: store._id,
+        }),
+      })
+
+      const payload = (await response.json()) as {
+        error?: string
+        details?: string
+        needsReview?: boolean
+        fixtures?: ImportedModelFixture[]
+      }
+
+      if (!response.ok) {
+        throw new Error(payload.error || payload.details || "Import analysis failed")
+      }
+
+      const detectedFixtures = Array.isArray(payload.fixtures) ? payload.fixtures : []
+      const mappedFixtures: EditorFixture[] = detectedFixtures.map((fixture, index) => {
+        const normalizedType = mapImportedTypeToFixtureType(fixture.type)
+        const confidence = typeof fixture.confidence === "number" ? fixture.confidence : 0
+        const rotation = typeof fixture.rotation === "number" ? fixture.rotation : 0
+
+        const rawX = clamp(Number(fixture.xPct) || 0, 0, 100)
+          const rawY = clamp(Number(fixture.yPct) || 0, 0, 100)
+          const rawW = clamp(Number(fixture.wPct) || 8, 2, 100)
+          const rawH = clamp(Number(fixture.hPct) || 8, 2, 100)
+
+          // Wall-snap: correct small coordinate errors so wall fixtures sit flush.
+          let snappedX = rawX
+          let snappedY = rawY
+          const wall = fixture.wall
+          if (wall === "left") snappedX = 0
+          else if (wall === "right") snappedX = clamp(100 - rawW, 0, 100)
+          else if (wall === "top") snappedY = 0
+          else if (wall === "bottom") snappedY = clamp(100 - rawH, 0, 100)
+
+          return {
+            id: fixture.id?.trim() || uid(`imp_${index + 1}`),
+            type: normalizedType,
+            label: fixture.label?.trim() || `${normalizedType.charAt(0).toUpperCase()}${normalizedType.slice(1)} ${index + 1}`,
+            xPct: snappedX,
+            yPct: snappedY,
+            wPct: rawW,
+            hPct: rawH,
+            rotationDeg: rotation,
+            confidence,
+            importedType: fixture.type,
+          }
+      })
+
+      setFixtures(mappedFixtures)
+      setEntries([])
+      setSelectedFixtureId(null)
+      setSelectedEntryIndex(null)
+      setPendingHotspot(null)
+      setPendingLinkedFixtureId(null)
+
+      const lowConfidenceIds = new Set(
+        mappedFixtures.filter((fixture) => (fixture.confidence ?? 1) < 0.75).map((fixture) => fixture.id),
+      )
+
+      setLowConfidenceFixtureIds(lowConfidenceIds)
+      setShowLowConfidenceBanner(Boolean(payload.needsReview) || lowConfidenceIds.size > 0)
+      setImportModalOpen(false)
+      if (importPreviewUrl) {
+        URL.revokeObjectURL(importPreviewUrl)
+      }
+      setImportPreviewUrl(null)
+      setImportFile(null)
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Import analysis failed")
+    } finally {
+      setImportLoading(false)
+    }
   }
 
   function addFixture(type: FixtureType) {
@@ -556,6 +768,25 @@ function StorePlannerEditor({
           </DialogDescription>
         </DialogHeader>
 
+        {showLowConfidenceBanner && (
+          <div className="flex items-start justify-between gap-3 rounded-xl border border-amber-300/50 bg-amber-200/20 px-3 py-2 text-sm text-amber-100">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <p>
+                Some elements were detected with low confidence (highlighted in yellow). Please review and
+                correct them before saving.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="text-xs font-semibold text-amber-200 hover:text-amber-100"
+              onClick={() => setShowLowConfidenceBanner(false)}
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[340px_1fr]">
           {/* ---- Sidebar ------------------------------------------------- */}
           <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto rounded-2xl border border-white/15 bg-white/5 p-3">
@@ -579,6 +810,16 @@ function StorePlannerEditor({
                 onClick={() => setShowWalls((v) => !v)}
               >
                 <Wallpaper className="size-4" /> {showWalls ? "Hide walls" : "Show walls"}
+              </Button>
+              <Button
+                variant="glass"
+                onClick={() => {
+                  setImportError(null)
+                  setImportModalOpen(true)
+                }}
+                disabled={!store}
+              >
+                <ImageUp className="size-4" /> Import Floor Plan
               </Button>
             </div>
 
@@ -808,6 +1049,7 @@ function StorePlannerEditor({
               {/* Fixtures */}
               {fixtures.map((fixture) => {
                 const selected = fixture.id === selectedFixtureId
+                const isLowConfidence = lowConfidenceFixtureIds.has(fixture.id)
                 const colorClasses =
                   fixture.type === "shelf"
                     ? "border-cyan-300/70 bg-cyan-300/20"
@@ -816,10 +1058,13 @@ function StorePlannerEditor({
                       : fixture.type === "entrance"
                         ? "border-emerald-400/80 bg-emerald-400/20"
                         : "border-amber-300/70 bg-amber-300/20"
+                const lowConfidenceClasses = isLowConfidence
+                  ? "border-yellow-300/90 bg-yellow-300/25 ring-1 ring-yellow-200/80"
+                  : ""
                 return (
                   <div
                     key={fixture.id}
-                    className={`absolute rounded-xl border shadow-xl ${colorClasses} ${selected ? "ring-2 ring-white/80" : ""}`}
+                    className={`absolute rounded-xl border shadow-xl ${colorClasses} ${lowConfidenceClasses} ${selected ? "ring-2 ring-white/80" : ""}`}
                     style={{
                       left: `${fixture.xPct}%`,
                       top: `${fixture.yPct}%`,
@@ -844,6 +1089,7 @@ function StorePlannerEditor({
                     <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-center gap-1 rounded-t-xl bg-black/25 px-1 py-0.5 text-[10px] font-semibold text-white">
                       {fixtureIcon(fixture.type)}
                       <span>{fixture.label}</span>
+                      {isLowConfidence && <span className="ml-1 rounded bg-yellow-400/40 px-1 text-[9px]">low conf</span>}
                     </div>
                     <button
                       type="button"
@@ -1019,6 +1265,60 @@ function StorePlannerEditor({
               </Button>
               <Button onClick={saveEntry}>
                 {editingEntryIndex !== null ? "Update placement" : "Save placement"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={importModalOpen}
+          onOpenChange={(next) => {
+            setImportModalOpen(next)
+            if (!next) {
+              setImportError(null)
+            }
+          }}
+        >
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Import Floor Plan</DialogTitle>
+              <DialogDescription>
+                Upload a PNG or JPEG floor plan image. We will analyze it and load detected fixtures as an editable
+                draft.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <label className="block text-sm">
+                <span className="mb-1 block text-xs text-muted-foreground">Floor plan image (PNG or JPEG)</span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  className="block w-full rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-sm text-foreground"
+                  onChange={(event) => handleImportFileSelect(event.target.files?.[0] ?? null)}
+                />
+              </label>
+
+              {importPreviewUrl && (
+                <div className="overflow-hidden rounded-xl border border-white/15 bg-black/20 p-2">
+                  <img
+                    src={importPreviewUrl}
+                    alt="Selected floor plan preview"
+                    className="max-h-72 w-full rounded-lg object-contain"
+                  />
+                </div>
+              )}
+
+              {importError && <p className="text-sm text-red-300">{importError}</p>}
+              {importLoading && <p className="text-sm text-muted-foreground">Analyzing your floor plan…</p>}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setImportModalOpen(false)} disabled={importLoading}>
+                Cancel
+              </Button>
+              <Button onClick={analyzeFloorPlanImport} disabled={importLoading || !importFile}>
+                {importLoading ? "Analyzing…" : "Analyze"}
               </Button>
             </div>
           </DialogContent>
